@@ -15,9 +15,9 @@ const Container = struct {
 
     const Self = @This();
 
-    fn deinit(self: Self) void {
-        self.allocator.free(self.chunkLookupTable);
-        self.allocator.free(self.filename);
+    fn deinit(self: *Self) void {
+        self.chunkLookupTable.deinit();
+        // self.allocator.free(self.filename);
     }
 
     fn init(allocator: std.mem.Allocator) Container {
@@ -29,55 +29,67 @@ const Container = struct {
 };
 
 fn openWavFile(container: Container) void {
-    std.debug.assert(ew(u8, container.filename, ".wav")) catch |err| {
-        std.log.err("It seems this filetype may be unsupported: {s}\n", .{@errorName(err)});
+    if (!ew(u8, container.filename, ".wav")) {
+        std.log.err("It seems this filetype may be unsupported\n", .{});
         return;
-    };
+    }
 
     const file = std.fs.cwd().openFile(container.filename, .{}) catch |err| {
         std.log.err("Unable to open file: {s}\n", .{@errorName(err)});
         return;
     };
-    defer file.close;
+    defer file.close();
 
     var buf_reader = std.io.bufferedReader(file.reader());
     var in_stream = buf_reader.reader();
 
-    const riffID: []const u8 = in_stream[0..4];
-    const waveID: []const u8 = in_stream[4..8];
-
-    std.debug.assert(eql(u8, riffID, "RIFF") and eql(u8, waveID, "WAVE")) catch {
-        std.log.err("Invalid .wav file\n", .{});
+    var headerBuf: [44]u8 = undefined;
+    const bytes_read = in_stream.read(&headerBuf) catch |err| {
+        std.log.err("Unable to parse header: {s}\n", .{@errorName(err)});
         return;
     };
 
-    container.chunkLookupTable.put(riffID, 0);
+    std.debug.print("{s}\n", .{headerBuf});
+    std.debug.print("{d}\n", .{bytes_read});
 
-    const stat = file.stat() catch |err| {
-        std.log.err("Unable to get file details: {s}\n", .{@errorName(err)});
-        return;
-    };
-    const size = stat.size;
-
-    var pos: usize = 8;
-    try file.seekTo(pos);
-
-    while (pos <= size) : (file.seekTo(pos) catch |err| {
-        std.log.err("Unable to seek to position {d}: {s}\n", .{ pos, @errorName(err) });
-        return;
-    }) {
-        const chunkID: []const u8 = in_stream[pos..(pos + 4)];
-        container.chunkLookupTable.put(chunkID, pos);
-
-        const chunkSize = in_stream.readInt(usize);
-        pos += chunkSize;
-    }
+    // const riffID: []const u8 = in_stream[0..4];
+    // const waveID: []const u8 = in_stream[4..8];
+    //
+    // if (!eql(u8, riffID, "RIFF") and eql(u8, waveID, "WAVE")) {
+    //     std.log.err("Invalid .wav file\n", .{});
+    //     return;
+    // }
+    //
+    // container.chunkLookupTable.put(riffID, 0);
+    //
+    // const stat = file.stat() catch |err| {
+    //     std.log.err("Unable to get file details: {s}\n", .{@errorName(err)});
+    //     return;
+    // };
+    // const size = stat.size;
+    //
+    // var pos: usize = 8;
+    // try file.seekTo(pos);
+    //
+    // while (pos <= size) : (file.seekTo(pos) catch |err| {
+    //     std.log.err("Unable to seek to position {d}: {s}\n", .{ pos, @errorName(err) });
+    //     return;
+    // }) {
+    //     const chunkID: []const u8 = in_stream[pos..(pos + 4)];
+    //     container.chunkLookupTable.put(chunkID, pos);
+    //
+    //     const chunkSize = in_stream.readInt(usize);
+    //     pos += chunkSize;
+    // }
 }
 
 fn handleCommandLineArgs(args: *std.process.ArgIterator, container: *Container) void {
     while (args.next()) |arg| {
         if (eql(u8, arg, "--file")) {
             container.filename = args.next().?;
+        } else {
+            std.debug.print("Argument {s} not recognized\n", .{arg});
+            std.process.exit(0);
         }
     }
 }
@@ -101,5 +113,5 @@ pub fn main() !void {
 
     openWavFile(container);
 
-    std.debug.print("{any}\n", .{container.chunkLookupTable});
+    // std.debug.print("{any}\n", .{container.chunkLookupTable});
 }
